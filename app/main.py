@@ -1,9 +1,32 @@
 # python -m uvicorn app.main:app --reload    (to run project)
-from fastapi import Depends, FastAPI, status, HTTPException
+from fastapi import (
+    Depends,
+    FastAPI,
+    status,
+    HTTPException,
+    Form,
+)
 from sqlalchemy.orm import Session
 from app.database import Base, engine, get_db
-from app.models import Expense
-from app.schemas import ExpenseCreate, ExpenseResponse, ExpenseUpdate
+from app.models import Expense, User
+from app.schemas import (
+    ExpenseCreate,
+    ExpenseResponse,
+    ExpenseUpdate,
+    UserResponse,
+    UserCreate,
+    UserLogin,
+    TokenResponse,
+)
+from app.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+)
+from fastapi.security import OAuth2PasswordBearer
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 Base.metadata.create_all(bind=engine)
 
@@ -44,16 +67,99 @@ def root():
 #     return {"id": expense_id, "message": "Expense found"}
 
 
-# ---------------------------GET-------------------------------------------
-@app.get("/expenses", response_model=list[ExpenseResponse])
-def get_expenses(
+# ---------------------------POST REGISTER-------------------------------------------
+@app.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_user(
+    user: UserCreate,
     db: Session = Depends(get_db),
 ):
-    expenses = db.query(Expense).all()
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists",
+        )
+
+    hashed_password = hash_password(user.password)
+    new_user = User(
+        name=user.name,
+        email=user.email,
+        password_hash=hashed_password,
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
+
+
+# ---------------------------POST LOGIN-------------------------------------------
+@app.post(
+    "/login",
+    response_model=TokenResponse,
+)
+def login_user(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    existing_user = db.query(User).filter(User.email == username).first()
+
+    if existing_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={
+                "WWW-Authenticate": "Bearer",
+            },
+        )
+
+    password_valid = verify_password(
+        password,
+        existing_user.password_hash,
+    )
+
+    if not password_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={
+                "WWW-Authenticate": "Bearer",
+            },
+        )
+
+    access_token = create_access_token(
+        data={
+            "sub": str(existing_user.id),
+        }
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
+
+
+# ---------------------------GET EXPENSES-------------------------------------------
+@app.get(
+    "/expenses",
+    response_model=list[ExpenseResponse],
+)
+def get_expenses(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    expenses = db.query(Expense).filter(Expense.user_id == current_user.id).all()
+
     return expenses
 
 
-# ---------------------------GET BY ID-------------------------------------------
+# ---------------------------GET BY ID EXPENSES-------------------------------------------
 @app.get(
     "/expenses/{expense_id}",
     response_model=ExpenseResponse,
@@ -73,7 +179,7 @@ def get_expense(
     return expense
 
 
-# ---------------------------POST-------------------------------------------
+# ---------------------------POST EXPENSES-------------------------------------------
 @app.post(
     "/expenses",
     response_model=ExpenseResponse,
@@ -82,12 +188,14 @@ def get_expense(
 def create_expense(
     expense: ExpenseCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     new_expense = Expense(
         title=expense.title,
         amount=expense.amount,
         category=expense.category,
         description=expense.description,
+        user_id=current_user.id,
     )
 
     db.add(new_expense)
@@ -97,7 +205,7 @@ def create_expense(
     return new_expense
 
 
-# ---------------------------PATCH-------------------------------------------
+# ---------------------------PATCH EXPENSES-------------------------------------------
 @app.patch("/expenses/{expense_id}", response_model=ExpenseResponse)
 def update_expense(
     expense_id: int,

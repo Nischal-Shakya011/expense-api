@@ -20,6 +20,10 @@ class User(Base):
         unique=True,
         index=True,
     )
+    
+    password_hash: Mapped[str] = mapped_column(
+        String(255),
+    )
 
     expenses: Mapped[list["Expense"]] = relationship(
         back_populates="user",
