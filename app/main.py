@@ -1,4 +1,4 @@
-# python -m uvicorn app.main:app --reload    (to run project)
+# python -m uvicorn app.main:app --reload  (to run project)
 from fastapi import (
     Depends,
     FastAPI,
