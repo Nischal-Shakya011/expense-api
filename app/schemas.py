@@ -35,6 +35,7 @@ class ExpenseUpdate(BaseModel):
     title: str | None = None
     amount: float | None = None
     category: str | None = None
+    description: str | None = None
       
 model_config = {
    "from_attributes": True 

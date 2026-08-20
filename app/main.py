@@ -167,8 +167,16 @@ def get_expenses(
 def get_expense(
     expense_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    expense = db.query(Expense).filter(Expense.id == expense_id).first()
+    expense = (
+        db.query(Expense)
+        .filter(
+            Expense.id == expense_id,
+            Expense.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if expense is None:
         raise HTTPException(
@@ -205,14 +213,58 @@ def create_expense(
     return new_expense
 
 
+# ---------------------------PUT EXPENSES-------------------------------------------
+@app.put(
+    "/expenses/{expense_id}",
+    response_model=ExpenseResponse,
+)
+def update_expense(
+    expense_id: int,
+    expense: ExpenseUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    existing_expense = (
+        db.query(Expense)
+        .filter(
+            Expense.id == expense_id,
+            Expense.user_id == current_user.id,
+        )
+        .first()
+    )
+    if existing_expense is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Expense with id {expense_id} not found",
+        )
+
+    existing_expense.title = expense.title
+    existing_expense.amount = expense.amount
+    existing_expense.category = expense.category
+    existing_expense.description = expense.description
+
+    db.commit()
+    db.refresh(existing_expense)
+
+    return existing_expense
+
+
 # ---------------------------PATCH EXPENSES-------------------------------------------
 @app.patch("/expenses/{expense_id}", response_model=ExpenseResponse)
 def update_expense(
     expense_id: int,
     expense: ExpenseUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    existing_expense = db.query(Expense).filter(Expense.id == expense_id).first()
+    existing_expense = (
+        db.query(Expense)
+        .filter(
+            Expense.id == expense_id,
+            Expense.user_id == current_user.id,
+        )
+        .first()
+    )
     if existing_expense is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -238,8 +290,16 @@ def update_expense(
 def delete_expense(
     expense_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    expense = db.query(Expense).filter(Expense.id == expense_id).first()
+    expense = (
+        db.query(Expense)
+        .filter(
+            Expense.id == expense_id,
+            Expense.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if expense is None:
         raise HTTPException(
